@@ -1,0 +1,100 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    container_name: guardaapp-api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: mysql
+      MINIO_ENDPOINT: minio
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      mailhog:
+        condition: service_started
+    networks:
+      - guardaapp-network
+
+  mysql:
+    image: mysql:8.0
+    container_name: guardaapp-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-root_senha}
+      MYSQL_DATABASE: ${DB_NAME:-guardaapp}
+      MYSQL_USER: ${DB_USER:-guardaapp}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-root_senha}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - guardaapp-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: guardaapp-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - guardaapp-network
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: guardaapp-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb --ignore-existing local/guardaapp-avatars;
+      mc mb --ignore-existing local/guardaapp-docs;
+      mc mb --ignore-existing local/guardaapp-receipts;
+      mc mb --ignore-existing local/guardaapp-milestones;
+      mc mb --ignore-existing local/guardaapp-exports;
+      exit 0;
+      "
+    networks:
+      - guardaapp-network
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: guardaapp-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI — http://localhost:8025
+    networks:
+      - guardaapp-network
+
+volumes:
+  mysql_data:
+  minio_data:
+
+networks:
+  guardaapp-network:
+    driver: bridge

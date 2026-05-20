@@ -1,0 +1,26 @@
+# Dependências
+node_modules/
+
+# Ambiente
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+npm-debug.log*
+
+# Uploads temporários
+uploads/
+tmp/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Build
+dist/
