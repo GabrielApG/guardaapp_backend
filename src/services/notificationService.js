@@ -106,15 +106,18 @@ async function notifyCoparent(connectionId, actorId, type, payload) {
  * @param {object} message - objeto retornado por messageService.create
  */
 async function notifyNewMessage(connectionId, senderId, message) {
+  const LOG = '[push:debug]';
+
   // Resolver destinatário
   const [conn] = await db.query(
     'SELECT * FROM coparent_connections WHERE id = ?',
     [connectionId]
   );
-  if (!conn.length) return;
+  if (!conn.length) { console.warn(LOG, 'connection não encontrada:', connectionId); return; }
 
   const { user_id_a, user_id_b, protective_order } = conn[0];
   const targetId = user_id_a === senderId ? user_id_b : user_id_a;
+  console.log(LOG, `targetId=${targetId} senderId=${senderId}`);
 
   // Construir título e corpo respeitando modo baixo conflito
   let senderName = 'Co-parente';
@@ -138,25 +141,26 @@ async function notifyNewMessage(connectionId, senderId, message) {
 
   // 2. Checar preferências de push do destinatário
   const prefs = await getPreferences(targetId);
-  if (!prefs.push_enabled && prefs.push !== undefined ? !prefs.push_enabled : false) return;
+  const pushEnabled = prefs.push_enabled !== undefined
+    ? Boolean(prefs.push_enabled)
+    : prefs.push !== undefined
+      ? Boolean(prefs.push)
+      : true;
+  console.log(LOG, `pushEnabled=${pushEnabled} prefs=`, JSON.stringify(prefs));
+  if (!pushEnabled) { console.log(LOG, 'PAROU: push desabilitado nas prefs'); return; }
 
-  // 3. Verificar se destinatário está online no WS (evita push duplicado)
-  let isOnline = false;
-  try {
-    // getIO() pode falhar se Socket.IO não estiver inicializado (ex: testes)
-    const { getIO } = require('../realtime/socket');
-    const io = getIO();
-    const sockets = await io.in(`user:${targetId}`).fetchSockets();
-    isOnline = sockets.length > 0;
-  } catch {
-    // Socket.IO não inicializado ou erro — assume offline, envia push
-    isOnline = false;
-  }
+  // 3. Checar tokens registrados
+  const [tokens] = await db.query(
+    'SELECT expo_token, platform FROM push_tokens WHERE user_id = ?',
+    [targetId]
+  );
+  console.log(LOG, `tokens cadastrados para targetId=${targetId}:`, tokens.length, tokens);
 
-  if (isOnline) return; // Já receberá via WS
+  if (!tokens.length) { console.warn(LOG, 'PAROU: nenhum push token cadastrado para o usuário'); return; }
 
-  // 4. Enviar push
+  // 5. Enviar push
   const pushService = require('./pushService');
+  console.log(LOG, `enviando push para ${tokens.length} token(s)...`);
   await pushService.sendToUser(targetId, {
     title,
     body,
@@ -166,6 +170,7 @@ async function notifyNewMessage(connectionId, senderId, message) {
       messageId:    message?.id || null,
     },
   });
+  console.log(LOG, 'push enviado ✓');
 }
 
 async function notifyNewExpense(connectionId, submitterId) {
