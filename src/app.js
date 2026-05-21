@@ -14,8 +14,31 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.get('/docs/swagger.json', (req, res) => res.json(swaggerSpec));
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+function swaggerBasicAuth(req, res, next) {
+  const user = process.env.SWAGGER_USER;
+  const pass = process.env.SWAGGER_PASSWORD;
+  // Se não configurado, bloqueia em produção e libera em dev
+  if (!user || !pass) {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ error: 'Swagger desabilitado em produção.' });
+    }
+    return next();
+  }
+  const auth = req.headers['authorization'];
+  if (!auth || !auth.startsWith('Basic ')) {
+    res.set('WWW-Authenticate', 'Basic realm="GuardaApp Docs"');
+    return res.status(401).send('Autenticação necessária.');
+  }
+  const [authUser, authPass] = Buffer.from(auth.slice(6), 'base64').toString().split(':');
+  if (authUser !== user || authPass !== pass) {
+    res.set('WWW-Authenticate', 'Basic realm="GuardaApp Docs"');
+    return res.status(401).send('Credenciais inválidas.');
+  }
+  next();
+}
+
+app.get('/docs/swagger.json', swaggerBasicAuth, (req, res) => res.json(swaggerSpec));
+app.use('/docs', swaggerBasicAuth, swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.use('/api/v1/auth',          require('./routes/auth'));
 app.use('/api/v1/users',         require('./routes/users'));
