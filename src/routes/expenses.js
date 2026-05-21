@@ -202,6 +202,7 @@ router.get(  '/:expenseId',           auth, coparent,                        ctr
 router.patch('/:expenseId',           auth, coparent,                        ctrl.updateExpense);
 router.delete('/:expenseId',          auth, coparent,                        ctrl.deleteExpense);
 router.post( '/:expenseId/approve',   auth, coparent,                        ctrl.approveExpense);
+router.patch('/:expenseId/cancel',    auth, coparent,                        ctrl.cancelExpense);
 router.post( '/:expenseId/contest',   auth, coparent,                        ctrl.contestExpense);
 router.post( '/:expenseId/pay',       auth, coparent, upload.single('receipt'), ctrl.registerPayment);
 router.post( '/receipt/:expenseId',   auth, coparent, upload.single('receipt'), ctrl.uploadReceipt);

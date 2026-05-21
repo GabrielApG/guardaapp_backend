@@ -66,6 +66,13 @@ async function contestExpense(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function cancelExpense(req, res, next) {
+  try {
+    const expense = await expenseService.setStatus(req.params.expenseId, req.userId, 'cancelled');
+    res.json({ success: true, data: { status: expense.status } });
+  } catch (err) { next(err); }
+}
+
 async function registerPayment(req, res, next) {
   try {
     let receiptKey = null;
@@ -84,4 +91,4 @@ async function uploadReceipt(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { listExpenses, getSummary, createExpense, getExpense, updateExpense, deleteExpense, approveExpense, contestExpense, registerPayment, uploadReceipt };
+module.exports = { listExpenses, getSummary, createExpense, getExpense, updateExpense, deleteExpense, approveExpense, contestExpense, cancelExpense, registerPayment, uploadReceipt };

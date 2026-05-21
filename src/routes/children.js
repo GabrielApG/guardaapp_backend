@@ -1,5 +1,6 @@
 const router   = require('express').Router();
 const ctrl     = require('../controllers/childController');
+const ptrCtrl  = require('../controllers/parentingRuleController');
 const auth     = require('../middleware/auth');
 const coparent = require('../middleware/coparent');
 const multer   = require('multer');
@@ -118,5 +119,26 @@ router.get(   '/:childId',            auth, coparent,                          c
 router.patch( '/:childId',            auth, coparent,                          ctrl.updateChild);
 router.delete('/:childId',            auth, coparent,                          ctrl.deleteChild);
 router.post(  '/:childId/avatar',     auth, coparent, upload.single('avatar'), ctrl.uploadAvatar);
+
+/**
+ * Regime de convivência (busca / entrega) por criança.
+ *
+ * /children/{childId}/parenting-rules:
+ *   get:    Listar regras de convivência da criança
+ *   post:   Cadastrar regra (semanal ou FDS alternado)
+ * /children/{childId}/parenting-rules/{ruleId}:
+ *   patch:  Alterar regra (zera a confirmação do co-pai)
+ *   delete: Cancelar regra
+ * /children/{childId}/parenting-rules/{ruleId}/confirm:
+ *   post:   Confirmar/recusar a regra (confirmação bilateral)
+ * /children/{childId}/schedule?from=YYYY-MM-DD&to=YYYY-MM-DD:
+ *   get:    Agenda derivada (blocos busca->entrega no intervalo)
+ */
+router.get(   '/:childId/parenting-rules',                 auth, coparent, ptrCtrl.listRules);
+router.post(  '/:childId/parenting-rules',                 auth, coparent, ptrCtrl.createRule);
+router.patch( '/:childId/parenting-rules/:ruleId',         auth, coparent, ptrCtrl.updateRule);
+router.delete('/:childId/parenting-rules/:ruleId',         auth, coparent, ptrCtrl.deleteRule);
+router.post(  '/:childId/parenting-rules/:ruleId/confirm', auth, coparent, ptrCtrl.confirmRule);
+router.get(   '/:childId/schedule',                        auth, coparent, ptrCtrl.getSchedule);
 
 module.exports = router;
