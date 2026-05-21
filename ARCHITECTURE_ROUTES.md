@@ -1,6 +1,6 @@
 # GuardaApp — Arquitetura de Rotas, Controllers e Services
 
-> Mapeamento completo de cada endpoint HTTP → função do controller → services internos chamados.  
+> Mapeamento completo de cada endpoint HTTP → função do controller → services internos chamados.
 > Convenção de nomenclatura: **camelCase** para funções, **kebab-case** para arquivos.
 
 ---
@@ -81,8 +81,8 @@ src/
 
 ## 1. Módulo: Auth
 
-**Arquivo de rota:** `src/routes/auth.js`  
-**Controller:** `src/controllers/authController.js`  
+**Arquivo de rota:** `src/routes/auth.js`
+**Controller:** `src/controllers/authController.js`
 **Service principal:** `src/services/authService.js`
 
 ```
@@ -118,8 +118,8 @@ validateResetToken(token)      // verifica hash e expiração
 
 ## 2. Módulo: Users
 
-**Arquivo de rota:** `src/routes/users.js`  
-**Controller:** `src/controllers/userController.js`  
+**Arquivo de rota:** `src/routes/users.js`
+**Controller:** `src/controllers/userController.js`
 **Service principal:** `src/services/userService.js`
 
 ```
@@ -155,8 +155,8 @@ anonymize(userId)                 // Substitui nome/email/cpf por hashes (LGPD a
 
 ## 3. Módulo: Sessions
 
-**Arquivo de rota:** `src/routes/sessions.js`  
-**Controller:** `src/controllers/sessionController.js`  
+**Arquivo de rota:** `src/routes/sessions.js`
+**Controller:** `src/controllers/sessionController.js`
 **Service principal:** `src/services/sessionService.js`
 
 ```
@@ -184,8 +184,8 @@ revokeAllSessions(userId, exceptSessionId?)      // UPDATE ALL revoked_at = NOW(
 
 ## 4. Módulo: Children
 
-**Arquivo de rota:** `src/routes/children.js`  
-**Controller:** `src/controllers/childController.js`  
+**Arquivo de rota:** `src/routes/children.js`
+**Controller:** `src/controllers/childController.js`
 **Service principal:** `src/services/childService.js`
 
 ```
@@ -216,8 +216,8 @@ updateAvatarUrl(childId, connectionId, url)// UPDATE avatar_url
 
 ## 5. Módulo: Co-parent Connection
 
-**Arquivo de rota:** `src/routes/coparent.js`  
-**Controller:** `src/controllers/coparentController.js`  
+**Arquivo de rota:** `src/routes/coparent.js`
+**Controller:** `src/controllers/coparentController.js`
 **Service principal:** `src/services/coparentService.js`
 
 ```
@@ -248,8 +248,8 @@ validateMembership(connectionId, userId)    // confirma que userId é membro da 
 
 ## 6. Módulo: Events (Calendário)
 
-**Arquivo de rota:** `src/routes/events.js`  
-**Controller:** `src/controllers/eventController.js`  
+**Arquivo de rota:** `src/routes/events.js`
+**Controller:** `src/controllers/eventController.js`
 **Service principal:** `src/services/eventService.js`
 
 ```
@@ -282,8 +282,8 @@ getConfirmations(eventId)                   // SELECT FROM event_confirmations W
 
 ## 7. Módulo: Messages
 
-**Arquivo de rota:** `src/routes/messages.js`  
-**Controller:** `src/controllers/messageController.js`  
+**Arquivo de rota:** `src/routes/messages.js`
+**Controller:** `src/controllers/messageController.js`
 **Service principal:** `src/services/messageService.js`
 
 ```
@@ -313,8 +313,8 @@ markRead(connectionId, userId)                  // UPDATE read_at WHERE receiver
 
 ## 8. Módulo: Expenses
 
-**Arquivo de rota:** `src/routes/expenses.js`  
-**Controller:** `src/controllers/expenseController.js`  
+**Arquivo de rota:** `src/routes/expenses.js`
+**Controller:** `src/controllers/expenseController.js`
 **Service principal:** `src/services/expenseService.js`
 
 ```
@@ -353,8 +353,8 @@ calculateShare(amount, split)                      // '60/40' → { mine, theirs
 
 ## 9. Módulo: Documents (Cofre)
 
-**Arquivo de rota:** `src/routes/documents.js`  
-**Controller:** `src/controllers/documentController.js`  
+**Arquivo de rota:** `src/routes/documents.js`
+**Controller:** `src/controllers/documentController.js`
 **Service principal:** `src/services/documentService.js`
 
 ```
@@ -383,12 +383,13 @@ logAccess(docId, userId)                        // INSERT INTO document_access_l
 getAccessLog(docId, connectionId)               // SELECT access_log WHERE doc_id
 ```
 
+
 ---
 
 ## 10. Módulo: Health (Saúde)
 
-**Arquivo de rota:** `src/routes/health.js`  
-**Controller:** `src/controllers/healthController.js`  
+**Arquivo de rota:** `src/routes/health.js`
+**Controller:** `src/controllers/healthController.js`
 **Service principal:** `src/services/healthService.js`
 
 ```
@@ -417,8 +418,8 @@ softDelete(entryId, childId)                    // UPDATE deleted_at
 
 ## 11. Módulo: Vaccines (Vacinação PNI)
 
-**Arquivo de rota:** `src/routes/vaccines.js`  
-**Controller:** `src/controllers/vaccineController.js`  
+**Arquivo de rota:** `src/routes/vaccines.js`
+**Controller:** `src/controllers/vaccineController.js`
 **Service principal:** `src/services/vaccineService.js`
 
 ```
@@ -450,8 +451,8 @@ getVaccineTemplate(vaccineCode)                 // SELECT FROM pni_vaccines WHER
 
 ## 12. Módulo: Milestones (Diário)
 
-**Arquivo de rota:** `src/routes/milestones.js`  
-**Controller:** `src/controllers/milestoneController.js`  
+**Arquivo de rota:** `src/routes/milestones.js`
+**Controller:** `src/controllers/milestoneController.js`
 **Service principal:** `src/services/milestoneService.js`
 
 ```
@@ -484,8 +485,8 @@ removePhoto(photoId, milestoneId)                 // UPDATE milestone_photos SET
 
 ## 13. Módulo: Audit
 
-**Arquivo de rota:** `src/routes/audit.js`  
-**Controller:** `src/controllers/auditController.js`  
+**Arquivo de rota:** `src/routes/audit.js`
+**Controller:** `src/controllers/auditController.js`
 **Service principal:** `src/services/auditService.js`
 
 ```
@@ -523,8 +524,8 @@ verifyHash(eventData, storedHash)      // recalcula e compara
 
 ## 14. Módulo: Notifications
 
-**Arquivo de rota:** `src/routes/notifications.js`  
-**Controller:** `src/controllers/notificationController.js`  
+**Arquivo de rota:** `src/routes/notifications.js`
+**Controller:** `src/controllers/notificationController.js`
 **Service principal:** `src/services/notificationService.js`
 
 ```
@@ -567,8 +568,8 @@ sendWeeklyDigest(userId)                             // resumo semanal (cron job
 
 ## 15. Módulo: LGPD
 
-**Arquivo de rota:** `src/routes/lgpd.js`  
-**Controller:** `src/controllers/lgpdController.js`  
+**Arquivo de rota:** `src/routes/lgpd.js`
+**Controller:** `src/controllers/lgpdController.js`
 **Service principal:** `src/services/lgpdService.js`
 
 ```
