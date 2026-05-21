@@ -37,6 +37,11 @@ services:
       MYSQL_DATABASE: ${DB_NAME:-guardaapp}
       MYSQL_USER: ${DB_USER:-guardaapp}
       MYSQL_PASSWORD: ${DB_PASSWORD:-root_senha}
+    ports:
+      # Bind SÓ no localhost do VPS — NÃO expõe o MySQL à internet.
+      # Acesso externo apenas via túnel SSH:
+      #   ssh -i ~/deploy_key -L 3306:127.0.0.1:3306 ubuntu@SEU_IP
+      - "127.0.0.1:3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./migrations:/docker-entrypoint-initdb.d
