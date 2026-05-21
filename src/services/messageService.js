@@ -1,6 +1,22 @@
+'use strict';
+/**
+ * messageService.js — GuardaApp
+ *
+ * Serviço de mensagens com suporte a 3 estados de tick (enviado/entregue/lido).
+ *
+ * REGRA DOS TICKS:
+ *   created_at  preenchido, delivered_at NULL  → enviado   (✓ cinza)
+ *   delivered_at preenchido, read_at NULL      → entregue  (✓✓ cinza)
+ *   read_at preenchido                         → lido      (✓✓ azul)
+ *
+ * AUDITORIA: delivered_at e read_at NÃO entram no hash SHA-256 (campo imutável).
+ */
+
 const db             = require('../config/database');
 const hashChain      = require('./hashChain');
 const { v4: uuidv4 } = require('uuid');
+
+// ─── Leitura ──────────────────────────────────────────────────────────────────
 
 async function listByConnection(connectionId, before, limit = 30) {
   let sql    = 'SELECT * FROM messages WHERE conversation_id = (SELECT id FROM conversations WHERE connection_id = ?) AND deleted_at IS NULL';
@@ -9,17 +25,35 @@ async function listByConnection(connectionId, before, limit = 30) {
   sql += ' ORDER BY created_at DESC LIMIT ?';
   params.push(limit);
   const [messages] = await db.query(sql, params);
-  const [countRow] = await db.query('SELECT COUNT(*) as total FROM messages WHERE conversation_id = (SELECT id FROM conversations WHERE connection_id = ?) AND deleted_at IS NULL', [connectionId]);
+  const [countRow] = await db.query(
+    'SELECT COUNT(*) as total FROM messages WHERE conversation_id = (SELECT id FROM conversations WHERE connection_id = ?) AND deleted_at IS NULL',
+    [connectionId]
+  );
   return { messages: messages.reverse(), total: countRow[0].total };
 }
 
 async function findById(messageId, connectionId) {
   const [rows] = await db.query(
-    `SELECT m.* FROM messages m JOIN conversations c ON m.conversation_id = c.id WHERE m.id = ? AND c.connection_id = ?`,
+    `SELECT m.* FROM messages m
+     JOIN conversations c ON m.conversation_id = c.id
+     WHERE m.id = ? AND c.connection_id = ?`,
     [messageId, connectionId]
   );
   return rows[0] || null;
 }
+
+async function listAll(connectionId) {
+  const [rows] = await db.query(
+    `SELECT m.* FROM messages m
+     JOIN conversations c ON m.conversation_id = c.id
+     WHERE c.connection_id = ? AND m.deleted_at IS NULL
+     ORDER BY m.created_at ASC`,
+    [connectionId]
+  );
+  return rows;
+}
+
+// ─── Escrita ──────────────────────────────────────────────────────────────────
 
 async function ensureConversation(connectionId) {
   const [rows] = await db.query('SELECT id FROM conversations WHERE connection_id = ?', [connectionId]);
@@ -33,12 +67,34 @@ async function create(connectionId, senderId, text, isForced = false) {
   const convId       = await ensureConversation(connectionId);
   const previousHash = await hashChain.getLastHash(connectionId);
   const id           = uuidv4();
-  const hash         = hashChain.computeHash({ id, text, senderId, timestamp: new Date().toISOString() }, previousHash);
+  const now          = new Date();
+  const hash         = hashChain.computeHash(
+    { id, text, senderId, timestamp: now.toISOString() },
+    previousHash
+  );
+
   await db.query(
-    `INSERT INTO messages (id, conversation_id, sender_id, text, hash, previous_hash, is_hostile) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO messages
+       (id, conversation_id, sender_id, text, hash, previous_hash, is_hostile)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [id, convId, senderId, text, hash, previousHash, isForced ? 1 : 0]
   );
-  return { id, text, hash, isFlaggedHostile: isForced, createdAt: new Date() };
+
+  // Retorna o objeto completo (mesmo shape que o SELECT retornaria)
+  return {
+    id,
+    conversation_id: convId,
+    sender_id:       senderId,
+    text,
+    hash,
+    previous_hash:   previousHash,
+    is_hostile:      isForced ? 1 : 0,
+    forced_send:     isForced ? 1 : 0,
+    delivered_at:    null,
+    read_at:         null,
+    created_at:      now,
+    deleted_at:      null,
+  };
 }
 
 async function markForcedSend(messageId, connectionId) {
@@ -46,19 +102,71 @@ async function markForcedSend(messageId, connectionId) {
   return findById(messageId, connectionId);
 }
 
-async function listAll(connectionId) {
-  const [rows] = await db.query(
-    `SELECT m.* FROM messages m JOIN conversations c ON m.conversation_id = c.id WHERE c.connection_id = ? AND m.deleted_at IS NULL ORDER BY m.created_at ASC`,
-    [connectionId]
+// ─── Status de entrega/leitura ────────────────────────────────────────────────
+
+/**
+ * Marca como entregues TODAS as mensagens enviadas pelo outro usuário
+ * que ainda não têm delivered_at.
+ * Chamado quando o destinatário recebe mensagens (app aberto ou reconexão).
+ *
+ * @returns {number} Número de linhas afetadas
+ */
+async function markDelivered(connectionId, recipientId) {
+  const [r] = await db.query(
+    `UPDATE messages
+        SET delivered_at = NOW()
+      WHERE conversation_id = (SELECT id FROM conversations WHERE connection_id = ?)
+        AND sender_id != ?
+        AND delivered_at IS NULL
+        AND deleted_at IS NULL`,
+    [connectionId, recipientId]
   );
-  return rows;
+  return r.affectedRows;
 }
 
+/**
+ * Marca como lidas TODAS as mensagens enviadas pelo outro usuário
+ * que ainda não têm read_at.
+ * Garante delivered_at para manter consistência dos estados.
+ *
+ * Regra: mensagem lida está implicitamente entregue.
+ */
 async function markRead(connectionId, userId) {
   await db.query(
-    `UPDATE messages SET read_at = NOW() WHERE conversation_id = (SELECT id FROM conversations WHERE connection_id = ?) AND sender_id != ? AND read_at IS NULL`,
+    `UPDATE messages
+        SET delivered_at = COALESCE(delivered_at, NOW()),
+            read_at      = NOW()
+      WHERE conversation_id = (SELECT id FROM conversations WHERE connection_id = ?)
+        AND sender_id != ?
+        AND read_at IS NULL
+        AND deleted_at IS NULL`,
     [connectionId, userId]
   );
 }
 
-module.exports = { listByConnection, findById, create, markForcedSend, listAll, markRead };
+/**
+ * Conta mensagens não lidas enviadas pelo outro usuário.
+ */
+async function countUnread(connectionId, userId) {
+  const [rows] = await db.query(
+    `SELECT COUNT(*) as count
+       FROM messages
+      WHERE conversation_id = (SELECT id FROM conversations WHERE connection_id = ?)
+        AND sender_id != ?
+        AND read_at IS NULL
+        AND deleted_at IS NULL`,
+    [connectionId, userId]
+  );
+  return rows[0].count;
+}
+
+module.exports = {
+  listByConnection,
+  findById,
+  create,
+  markForcedSend,
+  listAll,
+  markDelivered,
+  markRead,
+  countUnread,
+};

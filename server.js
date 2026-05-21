@@ -1,5 +1,7 @@
 require('dotenv').config();
-const app = require('./src/app');
+const http = require('http');
+const app  = require('./src/app');
+const { initSocket } = require('./src/realtime/socket');
 const { client, BUCKETS } = require('./src/config/minio');
 
 const PORT = process.env.PORT || 3000;
@@ -15,8 +17,6 @@ process.on('uncaughtException', (err) => {
  * Garante que todos os buckets MinIO existem antes de aceitar requisições.
  * Idempotente — usa BucketAlreadyOwnedByYou silenciosamente.
  */
-// Política explícita: nega qualquer acesso público (anônimo) — todos os objetos
-// só são acessíveis via presigned URLs ou credenciais de serviço.
 const DENY_PUBLIC_POLICY = (bucket) => JSON.stringify({
   Version: '2012-10-17',
   Statement: [{
@@ -53,8 +53,14 @@ async function start() {
     // Não bloqueia o start — MinIO pode estar indisponível em testes
   }
 
-  app.listen(PORT, () => {
-    console.log(`GuardaApp API rodando na porta ${PORT} [${process.env.NODE_ENV}]`);
+  // Servidor HTTP explícito — compartilhado entre Express e Socket.IO
+  const server = http.createServer(app);
+
+  // Acopla Socket.IO ao mesmo servidor HTTP (sobe em /socket.io por padrão)
+  initSocket(server);
+
+  server.listen(PORT, () => {
+    console.log(`GuardaApp API + WS rodando na porta ${PORT} [${process.env.NODE_ENV}]`);
   });
 }
 
