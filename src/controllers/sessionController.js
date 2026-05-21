@@ -4,9 +4,12 @@ async function listSessions(req, res, next) {
   try {
     const sessions = await sessionService.listActiveByUser(req.userId);
     const data = sessions.map(s => ({
-      id: s.id, deviceName: s.device_name, deviceOs: s.device_os,
-      location: s.location, lastSeenAt: s.last_seen_at,
-      isCurrent: s.id === req.sessionId,
+      id:          s.id,
+      userAgent:   s.user_agent ?? s.device_name ?? null,
+      ipAddress:   s.ip_address ?? s.location ?? null,
+      createdAt:   s.created_at,
+      lastUsedAt:  s.last_seen_at ?? s.last_used_at ?? s.updated_at,
+      isCurrent:   s.id === req.sessionId,
     }));
     res.json({ success: true, data });
   } catch (err) { next(err); }

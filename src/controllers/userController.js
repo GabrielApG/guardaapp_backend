@@ -3,7 +3,7 @@ const coparentService  = require('../services/coparentService');
 const storage          = require('../services/storage');
 const { BUCKETS }      = require('../config/minio');
 
-const AVATAR_URL_TTL = 7 * 24 * 3600; // 7 dias
+const AVATAR_URL_TTL = 24 * 3600; // 24 horas
 
 async function resolveAvatarUrl(key) {
   if (!key) return null;

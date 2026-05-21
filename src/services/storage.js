@@ -1,4 +1,4 @@
-const { client, BUCKETS } = require('../config/minio');
+const { client, publicClient, BUCKETS } = require('../config/minio');
 const { v4: uuidv4 }      = require('uuid');
 const path                = require('path');
 
@@ -31,8 +31,8 @@ async function uploadExport(buffer, filename) {
   return generatePresignedUrl(filename, BUCKETS.EXPORTS, 24 * 3600);
 }
 
-async function generatePresignedUrl(key, bucket, ttlSec = 3600) {
-  return client.presignedGetObject(bucket || BUCKETS.DOCUMENTS, key, ttlSec);
+async function generatePresignedUrl(key, bucket, ttlSec = 3600, respHeaders = {}) {
+  return publicClient.presignedGetObject(bucket || BUCKETS.DOCUMENTS, key, ttlSec, respHeaders);
 }
 
 async function deleteFile(key, bucketName) {

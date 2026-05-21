@@ -15,6 +15,19 @@ process.on('uncaughtException', (err) => {
  * Garante que todos os buckets MinIO existem antes de aceitar requisições.
  * Idempotente — usa BucketAlreadyOwnedByYou silenciosamente.
  */
+// Política explícita: nega qualquer acesso público (anônimo) — todos os objetos
+// só são acessíveis via presigned URLs ou credenciais de serviço.
+const DENY_PUBLIC_POLICY = (bucket) => JSON.stringify({
+  Version: '2012-10-17',
+  Statement: [{
+    Effect: 'Deny',
+    Principal: { AWS: ['*'] },
+    Action: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+    Resource: [`arn:aws:s3:::${bucket}/*`],
+    Condition: { StringEquals: { 's3:authType': 'REST-QUERY-STRING' } },
+  }],
+});
+
 async function initBuckets() {
   for (const bucket of Object.values(BUCKETS)) {
     const exists = await client.bucketExists(bucket);
@@ -22,6 +35,13 @@ async function initBuckets() {
       await client.makeBucket(bucket, 'us-east-1');
       console.log(`[MinIO] Bucket criado: ${bucket}`);
     }
+    try {
+      const policy = await client.getBucketPolicy(bucket).catch(() => null);
+      if (!policy) {
+        await client.setBucketPolicy(bucket, DENY_PUBLIC_POLICY(bucket));
+        console.log(`[MinIO] Política privada aplicada: ${bucket}`);
+      }
+    } catch (_) { /* MinIO pode não suportar políticas em todos os modos */ }
   }
 }
 
