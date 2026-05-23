@@ -1,5 +1,6 @@
 const router   = require('express').Router();
 const ctrl     = require('../controllers/milestoneController');
+const evCtrl   = require('../controllers/evidenceController');
 const auth     = require('../middleware/auth');
 const coparent = require('../middleware/coparent');
 const multer   = require('multer');
@@ -168,13 +169,20 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
  *       201: { description: Comentário adicionado }
  */
 
-router.get(   '/',                                          auth, coparent,                      ctrl.listMilestones);
-router.post(  '/',                                          auth, coparent, upload.single('photo'), ctrl.createMilestone);
-router.get(   '/:milestoneId',                              auth, coparent,                      ctrl.getMilestone);
-router.patch( '/:milestoneId',                              auth, coparent,                      ctrl.updateMilestone);
-router.delete('/:milestoneId',                              auth, coparent,                      ctrl.deleteMilestone);
-router.post(  '/:milestoneId/photos',                       auth, coparent, upload.single('photo'), ctrl.addPhoto);
-router.delete('/:milestoneId/photos/:photoId',              auth, coparent,                      ctrl.deletePhoto);
-router.post(  '/:milestoneId/comments',                     auth, coparent,                      ctrl.addComment);
+router.get(   '/',                                              auth, coparent,                         ctrl.listMilestones);
+router.post(  '/',                                              auth, coparent, upload.single('photo'),  ctrl.createMilestone);
+
+// ── Momentos Probatórios — SPEC_MOMENTOS_PROBATORIOS.md §6 ──────────────────
+// IMPORTANTE: rota estática 'evidentiary' declarada antes de '/:milestoneId' para não ser interceptada
+router.post(  '/evidentiary',                                   auth, coparent, upload.single('photo'),  evCtrl.createEvidentiary);
+router.get(   '/:milestoneId/evidence',                         auth, coparent,                         evCtrl.getEvidence);
+router.get(   '/:milestoneId/evidence/certificate.pdf',         auth, coparent,                         evCtrl.getCertificatePdf);
+
+router.get(   '/:milestoneId',                                  auth, coparent,                         ctrl.getMilestone);
+router.patch( '/:milestoneId',                                  auth, coparent,                         ctrl.updateMilestone);
+router.delete('/:milestoneId',                                  auth, coparent,                         ctrl.deleteMilestone);
+router.post(  '/:milestoneId/photos',                           auth, coparent, upload.single('photo'),  ctrl.addPhoto);
+router.delete('/:milestoneId/photos/:photoId',                  auth, coparent,                         ctrl.deletePhoto);
+router.post(  '/:milestoneId/comments',                         auth, coparent,                         ctrl.addComment);
 
 module.exports = router;

@@ -1,5 +1,6 @@
 const db             = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
+const pushService    = require('./pushService');
 
 async function listByConnection(connectionId, filters = {}) {
   let sql  = 'SELECT * FROM events WHERE connection_id = ? AND deleted_at IS NULL';
@@ -24,7 +25,12 @@ async function create(connectionId, createdBy, data) {
     `INSERT INTO events (id, connection_id, child_id, created_by_user_id, title, description, location, category, event_date, start_time, end_time, recurrence, recurrence_end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [id, connectionId, data.childId || data.child_id, createdBy, data.title, data.description || null, data.location || null, data.category, data.eventDate || data.event_date, data.startTime || data.start_time || null, data.endTime || data.end_time || null, data.recurrence || 'none', data.recurrenceEndDate || null]
   );
-  return findById(id, connectionId);
+  const event = await findById(id, connectionId);
+  // Notifica co-parente (fire-and-forget)
+  pushService.notifyNewEvent(createdBy, connectionId, {
+    id, title: data.title, start_date: data.eventDate || data.event_date,
+  }).catch(() => {});
+  return event;
 }
 
 async function update(eventId, userId, data) {

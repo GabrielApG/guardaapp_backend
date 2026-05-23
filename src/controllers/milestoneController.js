@@ -15,24 +15,28 @@ async function resolvePhotoUrl(key) {
 
 async function sanitizeMilestone(m) {
   return {
-    id:          m.id,
-    childId:     m.child_id,
-    title:       m.title,
-    description: m.description ?? null,
-    date:        m.milestone_date,
-    emoji:       m.emoji ?? '🎉',
-    category:    m.category ?? 'other',
-    photoUrl:    await resolvePhotoUrl(m.photo_minio_key),
-    createdAt:   m.created_at,
-    // photo_minio_key nunca exposta ao cliente
+    id:            m.id,
+    childId:       m.child_id,
+    title:         m.title,
+    description:   m.description ?? null,
+    date:          m.milestone_date,
+    emoji:         m.emoji ?? '🎉',
+    category:      m.category ?? 'other',
+    photoUrl:      await resolvePhotoUrl(m.photo_minio_key),
+    isEvidentiary: !!m.is_evidentiary,
+    evidenceId:    m.evidence_id ?? null,
+    createdAt:     m.created_at,
+    // photo_minio_key e storage_key nunca expostos ao cliente
   };
 }
 
+// childId é opcional: sem ele retorna todos os marcos da conexão (diário completo)
 async function listMilestones(req, res, next) {
   try {
     const { childId, page = 1, perPage = 20, cursor } = req.query;
-    if (!childId) return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'childId é obrigatório.' } });
-    const { milestones, total } = await milestoneService.listByChild(childId, req.connectionId, cursor, parseInt(perPage));
+    const { milestones, total } = await milestoneService.listByChild(
+      childId || null, req.connectionId, cursor, parseInt(perPage)
+    );
     const data = await Promise.all(milestones.map(sanitizeMilestone));
     res.json({ success: true, data, meta: { page: +page, perPage: +perPage, total } });
   } catch (err) { next(err); }

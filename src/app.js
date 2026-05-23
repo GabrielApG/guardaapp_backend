@@ -14,6 +14,9 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Trust proxy: captura IP real atrás do ALB/nginx AWS (SPEC_MOMENTOS_PROBATORIOS.md §6.1)
+app.set('trust proxy', 1);
+
 function swaggerBasicAuth(req, res, next) {
   const user = process.env.SWAGGER_USER;
   const pass = process.env.SWAGGER_PASSWORD;
@@ -55,6 +58,11 @@ app.use('/api/v1/milestones',    require('./routes/milestones'));
 app.use('/api/v1/audit',         require('./routes/audit'));
 app.use('/api/v1/notifications', require('./routes/notifications'));
 app.use('/api/v1/lgpd',          require('./routes/lgpd'));
+app.use('/api/v1/support',       require('./routes/support'));
+app.use('/api/v1/admin',         require('./admin/routes'));
+
+// Rota pública de verificação de momentos probatórios (sem auth)
+app.use('/verify',               require('./routes/verify'));
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 

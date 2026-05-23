@@ -1,14 +1,20 @@
 const db             = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
 
+// childId é opcional: quando omitido retorna todos os marcos da conexão (usado pelo diário)
 async function listByChild(childId, connectionId, cursor, limit = 20) {
-  let sql    = 'SELECT * FROM milestones WHERE child_id = ? AND connection_id = ? AND is_active = 1';
-  const params = [childId, connectionId];
-  if (cursor) { sql += ' AND id < ?'; params.push(cursor); }
+  let sql    = 'SELECT * FROM milestones WHERE connection_id = ? AND is_active = 1';
+  const params = [connectionId];
+  if (childId) { sql += ' AND child_id = ?'; params.push(childId); }
+  if (cursor)  { sql += ' AND id < ?';       params.push(cursor); }
   sql += ' ORDER BY milestone_date DESC LIMIT ?';
   params.push(limit);
   const [milestones] = await db.query(sql, params);
-  const [countRow]   = await db.query('SELECT COUNT(*) as total FROM milestones WHERE child_id = ? AND connection_id = ? AND is_active = 1', [childId, connectionId]);
+
+  let countSql    = 'SELECT COUNT(*) as total FROM milestones WHERE connection_id = ? AND is_active = 1';
+  const countParams = [connectionId];
+  if (childId) { countSql += ' AND child_id = ?'; countParams.push(childId); }
+  const [countRow] = await db.query(countSql, countParams);
   return { milestones, total: countRow[0].total };
 }
 

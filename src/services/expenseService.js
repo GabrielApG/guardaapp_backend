@@ -1,5 +1,6 @@
 const db             = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
+const pushService    = require('./pushService');
 
 async function listByConnection(connectionId, filters = {}, userId) {
   let sql    = 'SELECT * FROM expenses WHERE connection_id = ? AND deleted_at IS NULL';
@@ -24,7 +25,12 @@ async function create(connectionId, submittedBy, data) {
     `INSERT INTO expenses (id, connection_id, child_id, submitted_by_id, title, description, category, amount, split_ratio, expense_date, receipt_minio_key, receipt_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [id, connectionId, data.childId || data.child_id, submittedBy, data.title, data.description || null, data.category, data.amount, data.splitRatio || data.split_ratio || '50/50', data.expenseDate || data.expense_date, data.receiptKey || null, data.receiptName || null]
   );
-  return findById(id, connectionId);
+  const expense = await findById(id, connectionId);
+  // Notifica co-parente (fire-and-forget)
+  pushService.notifyNewExpense(submittedBy, connectionId, {
+    id, title: data.title, amount: data.amount,
+  }).catch((err) => console.error('[Push] notifyNewExpense error:', err.message));
+  return expense;
 }
 
 async function update(expenseId, userId, data) {

@@ -11,11 +11,18 @@ async function resolveReceiptUrl(key) {
   catch (_) { return null; }
 }
 
-async function sanitizeExpense(e) {
-  const [receiptUrl, paymentReceiptUrl] = await Promise.all([
-    resolveReceiptUrl(e.receipt_minio_key),
-    resolveReceiptUrl(e.payment_receipt_minio_key),
-  ]);
+// Sanitização completa (com presigned URLs) — usada apenas no detalhe individual.
+// Na listagem, presigned URLs não são geradas para evitar N×2 chamadas ao MinIO
+// que causam timeout de 10s no cliente quando há muitas despesas.
+async function sanitizeExpense(e, { withUrls = false } = {}) {
+  let receiptUrl        = null;
+  let paymentReceiptUrl = null;
+  if (withUrls) {
+    [receiptUrl, paymentReceiptUrl] = await Promise.all([
+      resolveReceiptUrl(e.receipt_minio_key),
+      resolveReceiptUrl(e.payment_receipt_minio_key),
+    ]);
+  }
   return {
     id:              e.id,
     title:           e.title,
@@ -33,7 +40,8 @@ async function sanitizeExpense(e) {
     child_id:        e.child_id,
     connection_id:   e.connection_id,
     created_at:      e.created_at,
-    hasReceipt:      !!e.receipt_minio_key,
+    hasReceipt:          !!e.receipt_minio_key,
+    hasPaymentReceipt:   !!e.payment_receipt_minio_key,
     receiptUrl,
     paymentReceiptUrl,
     // _minio_key nunca exposta ao cliente
@@ -44,7 +52,8 @@ async function listExpenses(req, res, next) {
   try {
     const { page = 1, perPage = 20, ...filters } = req.query;
     const { expenses, total } = await expenseService.listByConnection(req.connectionId, filters, req.userId);
-    const data = await Promise.all(expenses.map(sanitizeExpense));
+    // withUrls: false — presigned URLs omitidas na lista para evitar N×2 chamadas MinIO (timeout)
+    const data = await Promise.all(expenses.map(e => sanitizeExpense(e, { withUrls: false })));
     res.json({ success: true, data, meta: { page: +page, perPage: +perPage, total } });
   } catch (err) { next(err); }
 }
@@ -62,7 +71,7 @@ async function createExpense(req, res, next) {
     if (req.file) receiptKey = await storage.uploadReceipt(req.file, req.body.childId || 'general');
     const expense = await expenseService.create(req.connectionId, req.userId, { ...req.body, receiptKey });
     await notificationService.notifyNewExpense(req.connectionId, req.userId);
-    res.status(201).json({ success: true, data: await sanitizeExpense(expense) });
+    res.status(201).json({ success: true, data: await sanitizeExpense(expense, { withUrls: true }) });
   } catch (err) { next(err); }
 }
 
@@ -70,7 +79,7 @@ async function getExpense(req, res, next) {
   try {
     const expense = await expenseService.findById(req.params.expenseId, req.connectionId);
     if (!expense) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Despesa não encontrada.' } });
-    res.json({ success: true, data: await sanitizeExpense(expense) });
+    res.json({ success: true, data: await sanitizeExpense(expense, { withUrls: true }) });
   } catch (err) { next(err); }
 }
 
@@ -78,7 +87,7 @@ async function updateExpense(req, res, next) {
   try {
     await expenseService.update(req.params.expenseId, req.userId, req.body);
     const expense = await expenseService.findById(req.params.expenseId, req.connectionId);
-    res.json({ success: true, data: await sanitizeExpense(expense) });
+    res.json({ success: true, data: await sanitizeExpense(expense, { withUrls: true }) });
   } catch (err) { next(err); }
 }
 

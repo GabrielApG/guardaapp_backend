@@ -3,6 +3,7 @@ const http = require('http');
 const app  = require('./src/app');
 const { initSocket } = require('./src/realtime/socket');
 const { client, BUCKETS } = require('./src/config/minio');
+const { startNotificationJobs } = require('./src/services/pushService');
 
 const PORT = process.env.PORT || 3000;
 
@@ -62,6 +63,10 @@ async function start() {
   server.listen(PORT, () => {
     console.log(`GuardaApp API + WS rodando na porta ${PORT} [${process.env.NODE_ENV}]`);
   });
+
+  // Inicia jobs de push notification (lembretes de eventos + digest diário)
+  startNotificationJobs();
+  console.log('[Push] Jobs de notificação iniciados.');
 }
 
 start();
