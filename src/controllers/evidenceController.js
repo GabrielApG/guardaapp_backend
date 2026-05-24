@@ -8,6 +8,7 @@ const milestoneService    = require('../services/milestoneService');
 const storage             = require('../services/storage');
 const pdfExport           = require('../services/pdfExport');
 const notificationService = require('../services/notificationService');
+const timestampService    = require('../services/timestampService');
 const db                  = require('../config/database');
 const { BUCKETS }         = require('../config/minio');
 
@@ -39,8 +40,10 @@ async function sanitizeEvidence(ev, includePhoto = true) {
       deviceOs:         ev.device_os         || null,
       deviceOsVersion:  ev.device_os_version || null,
       deviceName:       ev.device_name       || null,
+      deviceIsRooted:   ev.device_is_rooted === null || ev.device_is_rooted === undefined ? null : Boolean(ev.device_is_rooted),
       clientCapturedAt: ev.client_captured_at || null,
       clientTimezone:   ev.client_timezone    || null,
+      clockDeltaMs:     ev.clock_delta_ms !== null && ev.clock_delta_ms !== undefined ? Number(ev.clock_delta_ms) : null,
       exifTakenAt:      ev.exif_taken_at      || null,
       exifGpsLat:       ev.exif_gps_lat !== null ? parseFloat(ev.exif_gps_lat) : null,
       exifGpsLng:       ev.exif_gps_lng !== null ? parseFloat(ev.exif_gps_lng) : null,
@@ -66,6 +69,15 @@ async function sanitizeEvidence(ev, includePhoto = true) {
       recordHash:   ev.record_hash,
       previousHash: ev.previous_hash || null,
       auditEventId: ev.audit_event_id || null,
+    },
+    // L5 — carimbo de tempo RFC 3161 (ICP-Brasil). Token bruto NÃO é exposto na API.
+    l5: {
+      status:    ev.tsa_status   || 'pending',
+      authority: ev.tsa_authority || null,
+      genTime:   ev.tsa_gentime  || null,   // hora oficial atestada pela ACT
+      serial:    ev.tsa_serial   || null,
+      sealedAt:  ev.tsa_sealed_at || null,
+      hasToken:  !!ev.tsa_token,
     },
     createdAt: ev.created_at,
   };
@@ -174,6 +186,30 @@ async function getCertificatePdf(req, res, next) {
   } catch (err) { next(err); }
 }
 
+// ─── POST /milestones/:milestoneId/evidence/seal — retry manual do carimbo ────
+
+async function sealEvidence(req, res, next) {
+  try {
+    const ev = await evidenceService.getEvidenceByMilestone(req.params.milestoneId);
+    if (!ev) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Evidência não encontrada.' } });
+    }
+    if (ev.connection_id !== req.connectionId) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Acesso negado.' } });
+    }
+    if (!timestampService.isEnabled()) {
+      return res.status(503).json({ success: false, error: { code: 'TSA_DISABLED', message: 'Carimbo de tempo não configurado neste ambiente.' } });
+    }
+    if (ev.tsa_status === 'sealed') {
+      return res.json({ success: true, data: { status: 'sealed', alreadySealed: true } });
+    }
+
+    const result = await timestampService.sealEvidence(ev.id);
+    const code = result.sealed ? 200 : 502;
+    return res.status(code).json({ success: result.sealed, data: result });
+  } catch (err) { next(err); }
+}
+
 // ─── GET /verify/:protocol — PÚBLICO, sem auth ───────────────────────────────
 
 async function verifyByProtocol(req, res, next) {
@@ -213,17 +249,27 @@ async function verifyByProtocol(req, res, next) {
         model:   ev.device_model   || null,
         os:      ev.device_os      || null,
         version: ev.device_os_version || null,
+        // Sinais anti-spoofing: device comprometido / relógio divergente
+        isRooted:    ev.device_is_rooted === null || ev.device_is_rooted === undefined ? null : Boolean(ev.device_is_rooted),
+        clockDeltaMs: ev.clock_delta_ms !== null && ev.clock_delta_ms !== undefined ? Number(ev.clock_delta_ms) : null,
       },
       exifTakenAt: ev.exif_taken_at || null,
       // GPS mascarado para evitar exposição de localização precisa
       exifHasGps: (ev.exif_gps_lat !== null && ev.exif_gps_lng !== null),
+      // L5 — carimbo de tempo RFC 3161 (ICP-Brasil): hora oficial atestada por terceiro
+      timestamp: {
+        status:    ev.tsa_status   || 'pending',
+        authority: ev.tsa_authority || null,
+        genTime:   ev.tsa_gentime  || null,
+        serial:    ev.tsa_serial   || null,
+      },
       createdAt:   ev.created_at,
       // Aviso legal obrigatório
-      disclaimer: 'Registro com selo de integridade e trilha de auditoria. Os dados declarados pelo dispositivo (L1) são informativos e podem ser forjados em aparelhos comprometidos. A força probatória decorre do hash do conteúdo (L3) e do encadeamento server-side (L4).',
+      disclaimer: 'Registro com selo de integridade e trilha de auditoria. Os dados declarados pelo dispositivo (L1) são informativos e podem ser forjados em aparelhos comprometidos. A força probatória decorre do hash do conteúdo (L3), do encadeamento server-side (L4) e do carimbo de tempo RFC 3161 de Autoridade de Carimbo do Tempo credenciada ICP-Brasil (L5), quando presente.',
     };
 
     res.json({ success: true, data: publicData });
   } catch (err) { next(err); }
 }
 
-module.exports = { createEvidentiary, getEvidence, getCertificatePdf, verifyByProtocol };
+module.exports = { createEvidentiary, getEvidence, getCertificatePdf, sealEvidence, verifyByProtocol };

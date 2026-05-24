@@ -177,6 +177,7 @@ router.post(  '/',                                              auth, coparent, 
 router.post(  '/evidentiary',                                   auth, coparent, upload.single('photo'),  evCtrl.createEvidentiary);
 router.get(   '/:milestoneId/evidence',                         auth, coparent,                         evCtrl.getEvidence);
 router.get(   '/:milestoneId/evidence/certificate.pdf',         auth, coparent,                         evCtrl.getCertificatePdf);
+router.post(  '/:milestoneId/evidence/seal',                    auth, coparent,                         evCtrl.sealEvidence);
 
 router.get(   '/:milestoneId',                                  auth, coparent,                         ctrl.getMilestone);
 router.patch( '/:milestoneId',                                  auth, coparent,                         ctrl.updateMilestone);

@@ -18,6 +18,8 @@ async function sanitizeAgreement(a) {
     payment_mode: a.payment_mode, due_day: a.due_day, readjustment_mode: a.readjustment_mode,
     readjustment_index: a.readjustment_index, legal_basis: a.legal_basis,
     start_date: a.start_date, end_date: a.end_date, notes: a.notes, status: a.status,
+    clt_base_salary: a.clt_base_salary || null,
+    clt_discount_percentage: a.clt_discount_percentage || null,
     created_by_id: a.created_by_id, created_at: a.created_at,
     items: a.items || [], total_monthly: a.total_monthly || 0,
   };
@@ -53,6 +55,14 @@ async function sanitizePayment(p) {
 async function listAgreements(req, res, next) {
   try {
     const agreements = await supportService.listAgreements(req.connectionId);
+    const data = await Promise.all(agreements.map(sanitizeAgreement));
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+}
+
+async function listAgreementsHistory(req, res, next) {
+  try {
+    const agreements = await supportService.listAgreementsHistory(req.connectionId);
     const data = await Promise.all(agreements.map(sanitizeAgreement));
     res.json({ success: true, data });
   } catch (err) { next(err); }
@@ -181,7 +191,7 @@ async function exportExtractPdf(req, res, next) {
 }
 
 module.exports = {
-  listAgreements, getAgreement, createAgreement, updateAgreement, suspendAgreement, deactivateAgreement,
+  listAgreements, listAgreementsHistory, getAgreement, createAgreement, updateAgreement, suspendAgreement, deactivateAgreement,
   listInstallments, getInstallment,
   registerPayment, confirmPayment, contestPayment, reversePayment,
   getSummary, exportExtractPdf,

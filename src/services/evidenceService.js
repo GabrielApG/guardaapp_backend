@@ -16,6 +16,7 @@ const { v4: uuidv4 }     = require('uuid');
 const hashChain          = require('./hashChain');
 const auditService       = require('./auditService');
 const storage            = require('./storage');
+const timestampService   = require('./timestampService');
 const { BUCKETS }        = require('../config/minio');
 
 // ─── Protocolo ───────────────────────────────────────────────────────────────
@@ -87,6 +88,9 @@ function parseClientMeta(raw) {
       deviceName:       m.deviceName        || null,
       clientCapturedAt: m.clientCapturedAt  || null,
       clientTimezone:   m.clientTimezone    || null,
+      // Flag root/jailbreak (expo-device). Só aceita boolean explícito;
+      // qualquer outra coisa vira null ("não foi possível determinar").
+      deviceIsRooted:   typeof m.deviceIsRooted === 'boolean' ? m.deviceIsRooted : null,
       exif:             m.exif              || null,
     };
   } catch {
@@ -196,7 +200,19 @@ async function createEvidentiary(opts) {
       // exif blob excluído: MySQL JSON normaliza key-order → hash não-determinístico
     },
   };
+  // deviceIsRooted entra no hash SOMENTE quando determinado (boolean). Quando null,
+  // a chave é OMITIDA — assim registros antigos (sem o campo) produzem exatamente o
+  // mesmo payload canônico de antes e continuam verificando ÍNTEGRO. Ver migration 032.
+  if (meta.deviceIsRooted !== null) {
+    canonicalPayload.client.deviceIsRooted = meta.deviceIsRooted;
+  }
   const recordHash = computeRecordHash(canonicalPayload, previousHash);
+
+  // clock_delta_ms — derivado, NÃO entra no hash (clientCapturedAt e serverReceivedAt
+  // já estão no payload canônico). Indício de relógio do device adulterado.
+  const clockDeltaMs = meta.clientCapturedAt
+    ? serverReceivedAt.getTime() - new Date(meta.clientCapturedAt).getTime()
+    : null;
 
   // Transação: milestone + evidence atomicamente
   const conn = await db.getConnection();
@@ -223,19 +239,21 @@ async function createEvidentiary(opts) {
          (id, milestone_id, connection_id, captured_by_id,
           storage_key, content_sha256, content_type, byte_size,
           device_brand, device_model, device_os, device_os_version, device_name,
-          client_captured_at, client_timezone,
+          device_is_rooted,
+          client_captured_at, client_timezone, clock_delta_ms,
           exif_taken_at, exif_gps_lat, exif_gps_lng, exif_raw,
           server_received_at, source_ip, user_agent,
           geoip_country, geoip_region, geoip_city, geoip_source,
           record_hash, previous_hash,
           protocol)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         evidenceId, milestoneId, connectionId, capturedById,
         storageKey, contentSha256, mimetype, buffer.length,
         meta.deviceBrand, meta.deviceModel, meta.deviceOs, meta.deviceOsVersion, meta.deviceName,
+        meta.deviceIsRooted === null ? null : (meta.deviceIsRooted ? 1 : 0),
         meta.clientCapturedAt ? new Date(meta.clientCapturedAt) : null,
-        meta.clientTimezone,
+        meta.clientTimezone, clockDeltaMs,
         exif.takenAt  ? new Date(exif.takenAt) : null,
         exif.lat, exif.lng,
         meta.exif     ? JSON.stringify(meta.exif) : null,
@@ -267,6 +285,13 @@ async function createEvidentiary(opts) {
 
   // QR gerado assincronamente — fire-and-forget, não bloqueia resposta
   _generateQrAsync(evidenceId, protocol).catch(() => {});
+
+  // Carimbo de tempo RFC 3161 (ICP-Brasil) — fire-and-forget. Aplicado SOBRE o
+  // record_hash já selado, não entra no payload canônico. Se a ACT estiver indisponível,
+  // a evidência permanece tsa_status='pending' e o worker (startTimestampJobs) reprocessa.
+  if (timestampService.isEnabled()) {
+    timestampService.sealEvidence(evidenceId).catch(() => {});
+  }
 
   return {
     evidenceId,
@@ -362,6 +387,12 @@ async function verifyEvidenceIntegrity(evidence) {
       // exif blob excluído — ver createEvidentiary
     },
   };
+  // Espelha a regra condicional de createEvidentiary: deviceIsRooted entra no hash
+  // SOMENTE quando não-nulo. TINYINT do mysql2 vem como número (0/1) → converter p/
+  // boolean, idêntico ao que foi serializado na criação. NULL = chave omitida.
+  if (evidence.device_is_rooted !== null && evidence.device_is_rooted !== undefined) {
+    canonicalPayload.client.deviceIsRooted = Boolean(evidence.device_is_rooted);
+  }
 
   const recomputed   = computeRecordHash(canonicalPayload, evidence.previous_hash);
   const hashMatch    = recomputed === evidence.record_hash;

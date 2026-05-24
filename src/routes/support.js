@@ -14,6 +14,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 // ── Acordos ──────────────────────────────────────────────────────────────────
 router.get(  '/agreements',              auth, coparent, ctrl.listAgreements);
+router.get(  '/agreements/history',      auth, coparent, ctrl.listAgreementsHistory);
 router.post( '/agreements',              auth, coparent, upload.single('legal_doc'), ctrl.createAgreement);
 router.get(  '/agreements/:id',          auth, coparent, ctrl.getAgreement);
 router.patch( '/agreements/:id',           auth, coparent, ctrl.updateAgreement);

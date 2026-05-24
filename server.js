@@ -4,6 +4,7 @@ const app  = require('./src/app');
 const { initSocket } = require('./src/realtime/socket');
 const { client, BUCKETS } = require('./src/config/minio');
 const { startNotificationJobs } = require('./src/services/pushService');
+const { startTimestampJobs } = require('./src/services/timestampService');
 
 const PORT = process.env.PORT || 3000;
 
@@ -67,6 +68,9 @@ async function start() {
   // Inicia jobs de push notification (lembretes de eventos + digest diário)
   startNotificationJobs();
   console.log('[Push] Jobs de notificação iniciados.');
+
+  // Inicia worker de carimbo de tempo RFC 3161 (ICP-Brasil) — reprocessa pendentes/falhas
+  startTimestampJobs();
 }
 
 start();

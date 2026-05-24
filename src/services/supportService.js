@@ -54,16 +54,27 @@ async function getAgreement(agreementId, connectionId) {
 }
 
 async function createAgreement(connectionId, actorId, dto) {
+  // Auto-desativa acordos ativos anteriores para a mesma conexão antes de criar o novo.
+  // Regra de negócio: apenas um acordo ativo por vez por conexão.
+  await db.query(
+    `UPDATE support_agreements
+     SET status = 'encerrado', deleted_at = NOW(), end_date = CURDATE()
+     WHERE connection_id = ? AND status = 'ativo' AND deleted_at IS NULL`,
+    [connectionId]
+  );
+
   const id = uuidv4();
   await db.query(
     `INSERT INTO support_agreements
      (id, connection_id, payer_id, payee_id, payment_mode, due_day, readjustment_mode,
-      readjustment_index, legal_basis, legal_doc_minio_key, start_date, end_date, notes, created_by_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      readjustment_index, legal_basis, legal_doc_minio_key, start_date, end_date, notes,
+      clt_base_salary, clt_discount_percentage, created_by_id)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, connectionId, dto.payer_id, dto.payee_id, dto.payment_mode, dto.due_day || 5,
      dto.readjustment_mode || 'valor_fixo', dto.readjustment_index || null,
      dto.legal_basis || 'acordo_extrajudicial', dto.legal_doc_minio_key || null,
-     dto.start_date, dto.end_date || null, dto.notes || null, actorId]
+     dto.start_date, dto.end_date || null, dto.notes || null,
+     dto.clt_base_salary || null, dto.clt_discount_percentage || null, actorId]
   );
   // Itens por filho
   if (dto.items && dto.items.length) {
@@ -106,6 +117,20 @@ async function deactivateAgreement(agreementId, connectionId, actorId) {
   );
   await auditService.log(connectionId, actorId, 'support',
     'Acordo de pensão encerrado permanentemente.', { action: 'agreement_deactivated', agreementId });
+}
+
+// ─── Histórico de acordos (encerrados/suspensos) ──────────────────────────────
+
+async function listAgreementsHistory(connectionId) {
+  const [rows] = await db.query(
+    `SELECT sa.* FROM support_agreements sa
+     WHERE sa.connection_id = ?
+       AND (sa.deleted_at IS NOT NULL OR sa.status IN ('encerrado','suspenso'))
+     ORDER BY sa.created_at DESC
+     LIMIT 50`,
+    [connectionId]
+  );
+  return Promise.all(rows.map(a => getAgreementItems(a)));
 }
 
 // ─── Geração de parcelas (idempotente) ───────────────────────────────────────
@@ -431,7 +456,7 @@ async function buildExtractData(connectionId, { agreementId, startMonth, endMont
 }
 
 module.exports = {
-  listAgreements, getAgreement, createAgreement, updateAgreement, suspendAgreement, deactivateAgreement,
+  listAgreements, listAgreementsHistory, getAgreement, createAgreement, updateAgreement, suspendAgreement, deactivateAgreement,
   generateInstallments, listInstallments, getInstallment,
   registerPayment, confirmPayment, contestPayment, reversePayment,
   getSummary, recomputeInstallmentStatus, buildExtractData,

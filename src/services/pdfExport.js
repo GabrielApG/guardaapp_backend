@@ -276,6 +276,15 @@ async function generateMilestoneCertificatePdf({ evidence: ev, integrity, photoB
   } else {
     row('Localização (geo-IP)', '—', `Fonte: ${ev.geoip_source || 'indisponível'}`);
   }
+  if (ev.clock_delta_ms !== null && ev.clock_delta_ms !== undefined) {
+    const d = Number(ev.clock_delta_ms);
+    const secs = Math.round(d / 1000);
+    row('Divergência de relógio (servidor − aparelho)',
+      `${secs >= 0 ? '+' : ''}${secs}s (${d} ms)`,
+      Math.abs(d) > 120000
+        ? 'ATENÇÃO: divergência alta — relógio do aparelho pode estar incorreto ou adulterado'
+        : 'Diferença entre o relógio do servidor (NTP) e o do aparelho no momento da captura');
+  }
   doc.moveDown(0.5);
 
   // ── L1 — Dispositivo ───────────────────────────────────────────────────────
@@ -306,6 +315,13 @@ async function generateMilestoneCertificatePdf({ evidence: ev, integrity, photoB
     (ev.exif_gps_lat !== null && ev.exif_gps_lng !== null)
       ? 'Coordenadas gravadas pela câmera — requer GPS ativo no dispositivo'
       : 'Câmera sem GPS ativo ou dado não disponível');
+  row('Integridade do aparelho (root/jailbreak)',
+    ev.device_is_rooted === null || ev.device_is_rooted === undefined
+      ? 'Não verificado'
+      : (ev.device_is_rooted
+          ? 'DETECTADO — aparelho com root/jailbreak (confiabilidade da camada L1 reduzida)'
+          : 'Não detectado — aparelho aparentemente íntegro'),
+    'Verificação experimental no app — pode ser burlada em aparelhos comprometidos');
   doc.moveDown(0.5);
 
   // ── L3 — Integridade do conteúdo ───────────────────────────────────────────
@@ -334,27 +350,73 @@ async function generateMilestoneCertificatePdf({ evidence: ev, integrity, photoB
     row('ID de auditoria geral', ev.audit_event_id,
       'Cruzamento com a trilha de audit_events');
   }
+  doc.moveDown(0.5);
+
+  // ── L5 — Carimbo de tempo RFC 3161 (ICP-Brasil) ─────────────────────────────
+  sectionHeader('L5 — CARIMBO DE TEMPO RFC 3161 (Autoridade de Carimbo do Tempo ICP-Brasil)');
+  if (ev.tsa_status === 'sealed' && ev.tsa_token) {
+    const genAt = ev.tsa_gentime
+      ? formatInTimeZone(new Date(ev.tsa_gentime), 'America/Sao_Paulo', "dd/MM/yyyy 'às' HH:mm:ss") + ' BRT'
+      : '—';
+    row('Status', 'SELADO — carimbo de tempo obtido de terceiro confiável', null);
+    row('Autoridade (ACT)', ev.tsa_authority || '—',
+      'ACT credenciada ICP-Brasil — fé pública e independência (MP 2.200-2/2001)');
+    row('Hora oficial atestada', genAt,
+      'genTime sincronizado à Hora Legal Brasileira (Observatório Nacional)');
+    row('Número de série do token', ev.tsa_serial || '—', null);
+    if (ev.tsa_sealed_at) {
+      row('Selado pelo servidor em',
+        formatInTimeZone(new Date(ev.tsa_sealed_at), 'America/Sao_Paulo', "dd/MM/yyyy 'às' HH:mm:ss") + ' BRT', null);
+    }
+    row('O que isto comprova',
+      'Que o hash do registro (L4) já existia na hora oficial atestada acima, segundo terceiro independente — não depende da palavra do GuardaApp.', null);
+  } else {
+    const label = ev.tsa_status === 'failed'
+      ? 'NÃO SELADO — tentativas de carimbo falharam'
+      : 'PENDENTE — carimbo ainda não obtido (reprocessamento automático em curso)';
+    row('Status', label,
+      ev.tsa_last_error
+        ? `Último erro: ${String(ev.tsa_last_error).substring(0, 120)}`
+        : 'Carimbo de tempo RFC 3161 ainda não disponível neste registro');
+  }
 
   // ── Página 2 — Declaração jurídica ─────────────────────────────────────────
   doc.addPage();
   doc.font('Helvetica-Bold').fontSize(11).fillColor('#111111')
     .text('DECLARAÇÃO DE INTEGRIDADE E RESSALVAS JURÍDICAS', { underline: true, align: 'center' });
   doc.font('Helvetica').moveDown(1);
+
+  const sealed = ev.tsa_status === 'sealed' && ev.tsa_token;
+  const item2 = sealed
+    ? '2. A força probatória principal deriva de: (a) o hash SHA-256 da imagem calculado pelo servidor no momento do ' +
+      'recebimento (L3); (b) o encadeamento de registros append-only onde cada entrada depende da anterior, ' +
+      'tornando adulteração retroativa detectável (L4); (c) o carimbo de tempo do servidor (NTP); e (d) o carimbo ' +
+      'de tempo RFC 3161 de Autoridade de Carimbo do Tempo credenciada ICP-Brasil (L5), que atesta, por terceiro ' +
+      'independente e com fé pública, a existência do registro na hora oficial indicada.'
+    : '2. A força probatória principal deriva de: (a) o hash SHA-256 da imagem calculado pelo servidor no momento do ' +
+      'recebimento (L3); (b) o encadeamento de registros append-only onde cada entrada depende da anterior, ' +
+      'tornando adulteração retroativa detectável (L4); (c) o carimbo de tempo do servidor (NTP).';
+  const item5 = sealed
+    ? '5. Este registro possui carimbo de tempo RFC 3161 emitido por ACT credenciada ICP-Brasil (MP 2.200-2/2001), ' +
+      'sincronizado à Hora Legal Brasileira mantida pelo Observatório Nacional. O token pode ser verificado de ' +
+      'forma independente contra a cadeia da AC-Raiz ICP-Brasil, comprovando que o hash do registro (L4) já ' +
+      'existia na hora atestada — sem depender da palavra do GuardaApp.'
+    : '5. O carimbo de tempo de terceiro (RFC 3161 / ICP-Brasil) ainda NÃO foi aplicado a este registro ' +
+      `(status: ${ev.tsa_status || 'pendente'}). Até a selagem, a referência temporal independente é apenas o ` +
+      'carimbo de tempo do servidor (NTP), interno ao GuardaApp.';
+
   doc.fontSize(9).fillColor('#111111').text(
     'Este certificado foi gerado automaticamente pelo sistema GuardaApp e documenta o registro de um momento com ' +
     '"Selo de Integridade e Trilha de Auditoria". NÃO constitui garantia de autenticidade absoluta nem ' +
     'substitui perícia técnica judicial.\n\n' +
     '1. Os dados de dispositivo (L1) são declarados pelo aplicativo cliente e podem ser forjados em aparelhos ' +
     'comprometidos (root, câmera virtual, mock location). Valem como indício corroborativo.\n\n' +
-    '2. A força probatória principal deriva de: (a) o hash SHA-256 da imagem calculado pelo servidor no momento do ' +
-    'recebimento (L3); (b) o encadeamento de registros append-only onde cada entrada depende da anterior, ' +
-    'tornando adulteração retroativa detectável (L4); (c) o carimbo de tempo do servidor (NTP).\n\n' +
+    item2 + '\n\n' +
     '3. A geolocalização exibida é aproximada (cidade da operadora/rede via geo-IP). Não representa ' +
     'localização exata do usuário.\n\n' +
     '4. O fluxo de captura exige abertura direta da câmera (sem galeria), impedindo o caminho casual de ' +
     'seleção de imagem existente, mas não garante contra dispositivos comprometidos com câmera virtual.\n\n' +
-    '5. Carimbo de tempo de terceiro (RFC 3161 / ICP-Brasil) não está presente nesta versão. Campo reservado ' +
-    'para versão futura do produto.\n\n' +
+    item5 + '\n\n' +
     'Linguagem aprovada: "Registro com selo de integridade e trilha de auditoria."\n' +
     'NÃO usar: "prova inviolável", "validade jurídica garantida" ou expressões equivalentes.',
     { align: 'justify' }
