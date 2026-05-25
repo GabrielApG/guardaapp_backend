@@ -2,11 +2,31 @@ const { client, publicClient, BUCKETS } = require('../config/minio');
 const { v4: uuidv4 }      = require('uuid');
 const path                = require('path');
 
+// Mapeamento de extensão → Content-Type (sem dependências externas)
+const MIME_MAP = {
+  '.jpg':  'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png':  'image/png',
+  '.gif':  'image/gif',
+  '.webp': 'image/webp',
+  '.heic': 'image/heic',
+  '.heif': 'image/heif',
+  '.pdf':  'application/pdf',
+  '.doc':  'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
+
+function _contentType(filename) {
+  const ext = path.extname(filename || '').toLowerCase();
+  return MIME_MAP[ext] || 'application/octet-stream';
+}
+
 async function _upload(buffer, originalname, bucket, prefix) {
-  const ext      = path.extname(originalname || '').toLowerCase();
-  const key      = `${prefix}/${uuidv4()}${ext}`;
-  const size     = buffer.length;
-  await client.putObject(bucket, key, buffer, size);
+  const ext         = path.extname(originalname || '').toLowerCase();
+  const key         = `${prefix}/${uuidv4()}${ext}`;
+  const size        = buffer.length;
+  const contentType = _contentType(originalname);
+  await client.putObject(bucket, key, buffer, size, { 'Content-Type': contentType });
   return key;
 }
 
